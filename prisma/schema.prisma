@@ -1,0 +1,47 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String?
+  email        String     @unique
+  passwordHash String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  scenarios    Scenario[]
+}
+
+model Scenario {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String   @default("Untitled Scenario")
+  commodity       String   // 'corn' | 'soybeans'
+  acres           Float
+  expectedYield   Float
+  costPerAcre     Float
+  basisAssumption Float
+  storageCost     Float    @default(0)
+  desiredMargin   Float    @default(0.50)
+  targetProfit    Float?
+  breakEvenPrice  Float
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  source    String   @default("dashboard")
+  createdAt DateTime @default(now())
+}
