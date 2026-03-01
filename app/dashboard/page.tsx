@@ -72,15 +72,15 @@ export default function FarmEconomicsPage() {
 
     const breakEven = calcBreakEvenPrice(profile.costPerAcre, profile.expectedYield);
     const totalProd = profile.acres * profile.expectedYield;
-    const costCategories: { key: keyof CostBreakdown; label: string; icon: string }[] = [
-        { key: 'land', label: 'Land/Rent', icon: '🏠' },
-        { key: 'seed', label: 'Seed', icon: '🌱' },
-        { key: 'fertilizer', label: 'Fertilizer', icon: '🧪' },
-        { key: 'chemical', label: 'Chemical', icon: '💧' },
-        { key: 'insurance', label: 'Insurance', icon: '🛡️' },
-        { key: 'equipment', label: 'Equipment', icon: '🚜' },
-        { key: 'labor', label: 'Labor', icon: '👷' },
-        { key: 'other', label: 'Other', icon: '📦' },
+    const costCategories: { key: keyof CostBreakdown; label: string }[] = [
+        { key: 'land', label: 'Land/Rent' },
+        { key: 'seed', label: 'Seed' },
+        { key: 'fertilizer', label: 'Fertilizer' },
+        { key: 'chemical', label: 'Chemical' },
+        { key: 'insurance', label: 'Insurance' },
+        { key: 'equipment', label: 'Equipment' },
+        { key: 'labor', label: 'Labor' },
+        { key: 'other', label: 'Other' },
     ];
 
     return (
@@ -88,7 +88,7 @@ export default function FarmEconomicsPage() {
             <div className="page-header">
                 <div>
                     <h1 className="page-title">Farm Economics</h1>
-                    <p className="page-subtitle">Your operation's cost structure and break-even analysis.</p>
+                    <p className="page-subtitle">Your operation&apos;s cost structure and break-even analysis.</p>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn btn-green btn-sm" onClick={handleSave}>
@@ -127,18 +127,15 @@ export default function FarmEconomicsPage() {
                 <h3 className="card-title">Cost Breakdown</h3>
                 <div className="cost-grid">
                     {costCategories.map((cat) => (
-                        <div key={cat.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 18 }}>{cat.icon}</span>
-                            <div style={{ flex: 1 }}>
-                                <label className="input-label">{cat.label}</label>
-                                <div className="input-with-prefix">
-                                    <span className="input-prefix">$</span>
-                                    <input
-                                        type="number"
-                                        value={profile.costBreakdown?.[cat.key] || 0}
-                                        onChange={(e) => updateCost(cat.key, e.target.value)}
-                                    />
-                                </div>
+                        <div key={cat.key}>
+                            <label className="input-label">{cat.label}</label>
+                            <div className="input-with-prefix">
+                                <span className="input-prefix">$</span>
+                                <input
+                                    type="number"
+                                    value={profile.costBreakdown?.[cat.key] || 0}
+                                    onChange={(e) => updateCost(cat.key, e.target.value)}
+                                />
                             </div>
                         </div>
                     ))}
