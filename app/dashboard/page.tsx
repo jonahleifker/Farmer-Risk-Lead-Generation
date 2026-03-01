@@ -28,6 +28,10 @@ export default function FarmEconomicsPage() {
     const [profile, setProfile] = useState<FarmProfile>(createDefaultProfile('corn'));
     const [showLeadModal, setShowLeadModal] = useState(false);
     const [saved, setSaved] = useState(false);
+    const [showCalc, setShowCalc] = useState(false);
+    const [calcField, setCalcField] = useState<{ key: keyof CostBreakdown; label: string } | null>(null);
+    const [calcExpense, setCalcExpense] = useState('');
+    const [calcAcres, setCalcAcres] = useState('');
 
     useEffect(() => {
         setProfile(loadLocalProfile());
@@ -50,6 +54,27 @@ export default function FarmEconomicsPage() {
         const total = Object.values(breakdown).reduce((s, v) => s + v, 0);
         updateField({ costBreakdown: breakdown, costPerAcre: total });
     };
+
+    const openCalc = (key: keyof CostBreakdown, label: string) => {
+        setCalcField({ key, label });
+        setCalcAcres(profile.acres.toString());
+        setCalcExpense('');
+        setShowCalc(true);
+    };
+
+    const applyCalc = () => {
+        if (!calcField) return;
+        const total = parseFloat(calcExpense);
+        const acres = parseFloat(calcAcres);
+        if (!isNaN(total) && !isNaN(acres) && acres > 0) {
+            updateCost(calcField.key, (total / acres).toFixed(2));
+        }
+        setShowCalc(false);
+    };
+
+    const calcResult = (parseFloat(calcExpense) && parseFloat(calcAcres) > 0)
+        ? (parseFloat(calcExpense) / parseFloat(calcAcres)).toFixed(2)
+        : '0.00';
 
     const handleSave = async () => {
         if (!session?.user) {
@@ -128,7 +153,18 @@ export default function FarmEconomicsPage() {
                 <div className="cost-grid">
                     {costCategories.map((cat) => (
                         <div key={cat.key}>
-                            <label className="input-label">{cat.label}</label>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <label className="input-label" style={{ marginBottom: 0 }}>{cat.label}</label>
+                                <button onClick={() => openCalc(cat.key, cat.label)}
+                                    title="Per-acre calculator"
+                                    style={{
+                                        background: 'rgba(59, 130, 246, 0.08)', border: 'none',
+                                        borderRadius: 4, padding: '2px 6px', cursor: 'pointer',
+                                        fontSize: 14, lineHeight: 1,
+                                    }}>
+                                    🧮
+                                </button>
+                            </div>
                             <div className="input-with-prefix">
                                 <span className="input-prefix">$</span>
                                 <input
@@ -141,9 +177,21 @@ export default function FarmEconomicsPage() {
                     ))}
                 </div>
                 <div style={{ marginTop: 16, padding: 16, background: 'var(--bg-primary)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                         <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Total Cost Per Acre</span>
                         <span style={{ fontSize: 24, fontWeight: 700 }}>${profile.costPerAcre.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Cost Per Bushel</span>
+                        <span style={{ fontWeight: 600, color: 'var(--accent-yellow)' }}>
+                            ${(profile.expectedYield > 0 ? profile.costPerAcre / profile.expectedYield : 0).toFixed(2)}/bu
+                        </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Comfort Price</span>
+                        <span style={{ fontWeight: 600, color: 'var(--accent-green)' }}>
+                            ${(profile.expectedYield > 0 ? (profile.costPerAcre / profile.expectedYield) + (profile.desiredMargin || 0.50) : 0).toFixed(2)}/bu
+                        </span>
                     </div>
                 </div>
             </div>
@@ -172,6 +220,52 @@ export default function FarmEconomicsPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Per-Acre Calculator Modal */}
+            {showCalc && (
+                <div className="modal-overlay" onClick={() => setShowCalc(false)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Calculate {calcField?.label}</h3>
+                            <button className="modal-close" onClick={() => setShowCalc(false)}>×</button>
+                        </div>
+                        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+                            Convert a bulk expense bill into a per-acre cost.
+                        </p>
+
+                        <div className="input-group">
+                            <label className="input-label">Total Expense Bill ($)</label>
+                            <input className="input-field" type="number" placeholder="e.g. 50000"
+                                value={calcExpense} onChange={e => setCalcExpense(e.target.value)} autoFocus />
+                        </div>
+
+                        <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: 12, margin: '8px 0', letterSpacing: 1 }}>
+                            ÷ DIVIDED BY ÷
+                        </div>
+
+                        <div className="input-group">
+                            <label className="input-label">Total Farm Acres</label>
+                            <input className="input-field" type="number" placeholder="e.g. 1000"
+                                value={calcAcres} onChange={e => setCalcAcres(e.target.value)} />
+                        </div>
+
+                        <div style={{
+                            background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.2)',
+                            borderRadius: 8, padding: 16, display: 'flex', justifyContent: 'space-between',
+                            alignItems: 'center', margin: '16px 0',
+                        }}>
+                            <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>Result:</span>
+                            <span style={{ color: 'var(--accent-blue)', fontSize: 22, fontWeight: 700 }}>
+                                ${calcResult} / acre
+                            </span>
+                        </div>
+
+                        <button className="btn btn-primary" style={{ width: '100%' }} onClick={applyCalc}>
+                            Apply to {calcField?.label}
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <LeadCaptureModal
                 isOpen={showLeadModal}

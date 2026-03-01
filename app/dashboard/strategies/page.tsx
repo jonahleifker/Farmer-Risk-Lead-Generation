@@ -265,11 +265,17 @@ export default function StrategiesPage() {
                                     <div className="metric-value" style={{ color: 'var(--accent-red)', fontSize: 18 }}>
                                         {formatMoney(opt.worstCase)}
                                     </div>
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-red)', marginTop: 2 }}>
+                                        ({targetBushels.toLocaleString()} bu)
+                                    </div>
                                 </div>
                                 <div className="metric-item">
                                     <div className="metric-label">Locked-In Revenue</div>
                                     <div className="metric-value" style={{ color: 'var(--accent-green)', fontSize: 18 }}>
                                         {formatMoney(opt.lockedIn)}
+                                    </div>
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-green)', marginTop: 2 }}>
+                                        ({targetBushels.toLocaleString()} bu)
                                     </div>
                                 </div>
                                 <div className="metric-item">
@@ -286,10 +292,10 @@ export default function StrategiesPage() {
                     <div className="cta-card">
                         <div className="cta-title">Ready to execute or need advice?</div>
                         <div className="cta-text" style={{ marginBottom: 16 }}>
-                            Take the next step with a professional to deploy these strategies.
+                            Take the next step with a StoneX professional to deploy these strategies.
                         </div>
                         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                            <button className="btn btn-green">🎧 Speak With an Advisor</button>
+                            <button className="btn btn-green">🎧 Speak With a StoneX Advisor</button>
                             <button className="btn btn-outline">Open Hedge Account</button>
                         </div>
                     </div>
