@@ -132,6 +132,7 @@ export default function PositionsPage() {
     const totalBushelsHedged = hedges.reduce((sum, h) => sum + h.bushelsHedged, 0);
     const coverage = calcHedgeCoverage(totalBushelsHedged, totalProd);
     const totalPnL = calcHedgePnL(hedges, currentPrice);
+    const unhedged = Math.max(totalProd - totalBushelsHedged, 0);
 
     if (loading) {
         return (
@@ -166,12 +167,27 @@ export default function PositionsPage() {
                 <h3 className="card-title">Position Summary</h3>
                 <div className="metrics-row">
                     <div className="metric-item">
+                        <div className="metric-label">Total Production</div>
+                        <div className="metric-value">{totalProd.toLocaleString()} bu</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
+                            {profile.acres.toLocaleString()} ac × {profile.expectedYield} bu/ac
+                        </div>
+                    </div>
+                    <div className="metric-item">
                         <div className="metric-label">Total Hedged</div>
                         <div className="metric-value">{totalBushelsHedged.toLocaleString()} bu</div>
                     </div>
                     <div className="metric-item">
+                        <div className="metric-label">Unhedged</div>
+                        <div className="metric-value" style={{ color: unhedged > 0 ? 'var(--accent-yellow)' : 'var(--accent-green)' }}>
+                            {unhedged.toLocaleString()} bu
+                        </div>
+                    </div>
+                    <div className="metric-item">
                         <div className="metric-label">Coverage</div>
-                        <div className="metric-value">{coverage.toFixed(0)}%</div>
+                        <div className="metric-value" style={{ color: coverage >= 75 ? '#22c55e' : coverage >= 25 ? 'var(--accent-yellow)' : '#ef4444' }}>
+                            {coverage.toFixed(0)}%
+                        </div>
                     </div>
                     <div className="metric-item">
                         <div className="metric-label">Unrealized P&L</div>
@@ -182,6 +198,24 @@ export default function PositionsPage() {
                     <div className="metric-item">
                         <div className="metric-label">Current Price</div>
                         <div className="metric-value">${currentPrice.toFixed(2)}</div>
+                    </div>
+                </div>
+                {/* Coverage Bar */}
+                <div style={{ marginTop: 16, padding: '12px 16px', background: 'var(--bg-primary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Hedge Coverage</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: coverage >= 75 ? '#22c55e' : coverage >= 25 ? 'var(--accent-yellow)' : '#ef4444' }}>
+                            {totalBushelsHedged.toLocaleString()} / {totalProd.toLocaleString()} bu ({coverage.toFixed(0)}%)
+                        </span>
+                    </div>
+                    <div style={{ height: 8, borderRadius: 4, background: 'rgba(148,163,184,0.08)', overflow: 'hidden' }}>
+                        <div style={{
+                            height: '100%', borderRadius: 4, transition: 'width 0.5s ease',
+                            width: `${Math.min(coverage, 100)}%`,
+                            background: coverage >= 75 ? 'linear-gradient(90deg, #22c55e, #16a34a)'
+                                : coverage >= 25 ? 'linear-gradient(90deg, #eab308, #f59e0b)'
+                                    : 'linear-gradient(90deg, #ef4444, #dc2626)',
+                        }} />
                     </div>
                 </div>
             </div>
