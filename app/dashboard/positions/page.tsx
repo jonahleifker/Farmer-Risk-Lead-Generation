@@ -1,20 +1,21 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import {
     HedgeEntry, FarmProfile, createDefaultProfile,
     calcTotalProduction, calcHedgePnL, calcHedgeCoverage,
     formatMoney, FUTURES_SYMBOLS,
 } from '@/lib/calculations';
 
-const STORAGE_KEY = 'farmer_risk_profile';
-const HEDGES_KEY = 'farmer_risk_hedges';
-
 export default function PositionsPage() {
+    const { data: session } = useSession();
     const [profile, setProfile] = useState<FarmProfile>(createDefaultProfile('corn'));
     const [hedges, setHedges] = useState<HedgeEntry[]>([]);
     const [currentPrice, setCurrentPrice] = useState(0);
+    const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({
         bushelsHedged: 5000,
         contractType: 'futures' as HedgeEntry['contractType'],
@@ -23,53 +24,130 @@ export default function PositionsPage() {
         expiration: '',
     });
 
-    useEffect(() => {
+    // Load profile and hedges from API
+    const loadData = useCallback(async () => {
+        if (!session?.user) return;
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            if (raw) setProfile(JSON.parse(raw));
-            const h = localStorage.getItem(HEDGES_KEY);
-            if (h) setHedges(JSON.parse(h));
-        } catch { }
+            const [profileRes, hedgesRes] = await Promise.all([
+                fetch('/api/profile'),
+                fetch('/api/hedges'),
+            ]);
+            const profileData = await profileRes.json();
+            const hedgesData = await hedgesRes.json();
 
+            if (profileData.profile) {
+                setProfile({
+                    id: profileData.profile.id,
+                    commodity: profileData.profile.commodity || 'corn',
+                    acres: profileData.profile.acres ?? 1000,
+                    expectedYield: profileData.profile.expectedYield ?? 200,
+                    costPerAcre: profileData.profile.costPerAcre ?? 0,
+                    basisAssumption: profileData.profile.basisAssumption ?? -0.30,
+                    storageCost: profileData.profile.storageCost ?? 0,
+                    desiredMargin: profileData.profile.desiredMargin ?? 0.50,
+                    breakEvenPrice: 0,
+                    updatedAt: profileData.profile.updatedAt || new Date().toISOString(),
+                });
+            }
+
+            if (hedgesData.hedges) {
+                setHedges(hedgesData.hedges.map((h: Record<string, unknown>) => ({
+                    id: h.id as string,
+                    profileId: h.userId as string,
+                    bushelsHedged: h.bushelsHedged as number,
+                    contractType: h.contractType as string,
+                    action: (h.action as string) || 'sell',
+                    entryPrice: h.entryPrice as number,
+                    expiration: (h.expiration as string) || '',
+                    createdAt: h.createdAt as string,
+                })));
+            }
+        } catch (err) {
+            console.error('Failed to load positions data:', err);
+        } finally {
+            setLoading(false);
+        }
+    }, [session]);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
+
+    // Fetch current market price
+    useEffect(() => {
         fetch('/api/market/quotes')
             .then(r => r.json())
             .then(j => {
                 if (j.success && j.data) {
-                    const p = localStorage.getItem(STORAGE_KEY);
-                    const commodity = p ? JSON.parse(p).commodity : 'corn';
-                    const sym = FUTURES_SYMBOLS[commodity as 'corn' | 'soybeans'];
+                    const sym = FUTURES_SYMBOLS[profile.commodity as 'corn' | 'soybeans'];
                     const q = j.data.find((d: { symbol: string }) => d.symbol === sym);
                     if (q) setCurrentPrice(q.regularMarketPrice / 100);
                 }
             })
             .catch(() => { });
-    }, []);
+    }, [profile.commodity]);
 
-    const saveHedges = (h: HedgeEntry[]) => {
-        setHedges(h);
-        localStorage.setItem(HEDGES_KEY, JSON.stringify(h));
+    const addHedge = async () => {
+        setSaving(true);
+        try {
+            const res = await fetch('/api/hedges', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(form),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setHedges(prev => [{
+                    id: data.hedge.id,
+                    profileId: session?.user?.id || '',
+                    bushelsHedged: data.hedge.bushelsHedged,
+                    contractType: data.hedge.contractType,
+                    action: data.hedge.action || 'sell',
+                    entryPrice: data.hedge.entryPrice,
+                    expiration: data.hedge.expiration || '',
+                    createdAt: data.hedge.createdAt,
+                }, ...prev]);
+                setShowForm(false);
+                setForm({ bushelsHedged: 5000, contractType: 'futures', action: 'sell', entryPrice: 0, expiration: '' });
+            }
+        } catch (err) {
+            console.error('Failed to add hedge:', err);
+        } finally {
+            setSaving(false);
+        }
     };
 
-    const addHedge = () => {
-        const newHedge: HedgeEntry = {
-            id: Date.now().toString(),
-            profileId: profile.id,
-            ...form,
-            createdAt: new Date().toISOString(),
-        };
-        saveHedges([...hedges, newHedge]);
-        setShowForm(false);
-        setForm({ bushelsHedged: 5000, contractType: 'futures', action: 'sell', entryPrice: 0, expiration: '' });
-    };
-
-    const removeHedge = (id: string) => {
-        saveHedges(hedges.filter(h => h.id !== id));
+    const removeHedge = async (id: string) => {
+        try {
+            const res = await fetch(`/api/hedges?id=${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                setHedges(prev => prev.filter(h => h.id !== id));
+            }
+        } catch (err) {
+            console.error('Failed to remove hedge:', err);
+        }
     };
 
     const totalProd = calcTotalProduction(profile.acres, profile.expectedYield);
     const totalBushelsHedged = hedges.reduce((sum, h) => sum + h.bushelsHedged, 0);
     const coverage = calcHedgeCoverage(totalBushelsHedged, totalProd);
     const totalPnL = calcHedgePnL(hedges, currentPrice);
+
+    if (loading) {
+        return (
+            <div className="page-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+                <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                        width: 40, height: 40, border: '3px solid rgba(34,197,94,0.15)',
+                        borderTop: '3px solid #22c55e', borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite', margin: '0 auto 16px',
+                    }} />
+                    <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Loading positions...</p>
+                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="page-container">
@@ -151,7 +229,9 @@ export default function PositionsPage() {
                                 onChange={(e) => setForm({ ...form, expiration: e.target.value })} />
                         </div>
                     </div>
-                    <button className="btn btn-green" onClick={addHedge}>Add Position</button>
+                    <button className="btn btn-green" onClick={addHedge} disabled={saving}>
+                        {saving ? 'Saving...' : 'Add Position'}
+                    </button>
                 </div>
             )}
 
