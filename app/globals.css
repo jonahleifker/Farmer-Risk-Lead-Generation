@@ -903,8 +903,8 @@ input[type="range"]::-moz-range-thumb {
    Sidebar
    ================================================================= */
 .sidebar {
-  width: 250px;
-  min-width: 250px;
+  width: 280px;
+  min-width: 280px;
   background: rgba(11, 17, 32, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
