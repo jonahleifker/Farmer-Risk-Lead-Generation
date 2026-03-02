@@ -1,40 +1,85 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { LeadCaptureModal } from '@/components/LeadCaptureModal';
 import {
     FarmProfile, CostBreakdown, CommodityType, createDefaultProfile,
     calcBreakEvenPrice,
 } from '@/lib/calculations';
 
-const STORAGE_KEY = 'farmer_risk_profile';
-
-function loadLocalProfile(): FarmProfile {
-    if (typeof window === 'undefined') return createDefaultProfile('corn');
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) return JSON.parse(raw);
-    } catch { }
-    return createDefaultProfile('corn');
-}
-
-function saveLocalProfile(p: FarmProfile) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
-}
-
 export default function FarmEconomicsPage() {
     const { data: session } = useSession();
     const [profile, setProfile] = useState<FarmProfile>(createDefaultProfile('corn'));
-    const [showLeadModal, setShowLeadModal] = useState(false);
-    const [saved, setSaved] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [showCalc, setShowCalc] = useState(false);
     const [calcField, setCalcField] = useState<{ key: keyof CostBreakdown; label: string } | null>(null);
     const [calcExpense, setCalcExpense] = useState('');
     const [calcAcres, setCalcAcres] = useState('');
+    const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Load profile from API on mount
     useEffect(() => {
-        setProfile(loadLocalProfile());
+        if (!session?.user) return;
+        fetch('/api/profile')
+            .then((res) => res.json())
+            .then((data) => {
+                if (data.profile) {
+                    setProfile({
+                        id: data.profile.id,
+                        commodity: data.profile.commodity || 'corn',
+                        acres: data.profile.acres ?? 1000,
+                        expectedYield: data.profile.expectedYield ?? 200,
+                        costPerAcre: data.profile.costPerAcre ?? 0,
+                        basisAssumption: data.profile.basisAssumption ?? -0.30,
+                        storageCost: data.profile.storageCost ?? 0,
+                        desiredMargin: data.profile.desiredMargin ?? 0.50,
+                        costBreakdown: data.profile.costBreakdown || {
+                            land: 0, seed: 0, fertilizer: 0, chemical: 0,
+                            insurance: 0, equipment: 0, labor: 0, other: 0,
+                        },
+                        breakEvenPrice: calcBreakEvenPrice(
+                            data.profile.costPerAcre ?? 0,
+                            data.profile.expectedYield ?? 200
+                        ),
+                        updatedAt: data.profile.updatedAt || new Date().toISOString(),
+                    });
+                }
+            })
+            .catch(console.error)
+            .finally(() => setLoading(false));
+    }, [session]);
+
+    // Debounced auto-save to API
+    const saveToDb = useCallback((p: FarmProfile) => {
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(async () => {
+            setSaveStatus('saving');
+            try {
+                const res = await fetch('/api/profile', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        commodity: p.commodity,
+                        acres: p.acres,
+                        expectedYield: p.expectedYield,
+                        costPerAcre: p.costPerAcre,
+                        basisAssumption: p.basisAssumption,
+                        storageCost: p.storageCost,
+                        desiredMargin: p.desiredMargin,
+                        costBreakdown: p.costBreakdown,
+                    }),
+                });
+                if (res.ok) {
+                    setSaveStatus('saved');
+                    setTimeout(() => setSaveStatus('idle'), 2000);
+                } else {
+                    setSaveStatus('error');
+                }
+            } catch {
+                setSaveStatus('error');
+            }
+        }, 800);
     }, []);
 
     const updateField = (updates: Partial<FarmProfile>) => {
@@ -43,7 +88,7 @@ export default function FarmEconomicsPage() {
             if ('costPerAcre' in updates || 'expectedYield' in updates) {
                 next.breakEvenPrice = calcBreakEvenPrice(next.costPerAcre, next.expectedYield);
             }
-            saveLocalProfile(next);
+            saveToDb(next);
             return next;
         });
     };
@@ -76,25 +121,6 @@ export default function FarmEconomicsPage() {
         ? (parseFloat(calcExpense) / parseFloat(calcAcres)).toFixed(2)
         : '0.00';
 
-    const handleSave = async () => {
-        if (!session?.user) {
-            setShowLeadModal(true);
-            return;
-        }
-        const res = await fetch('/api/scenarios', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                ...profile,
-                breakEvenPrice: calcBreakEvenPrice(profile.costPerAcre, profile.expectedYield),
-            }),
-        });
-        if (res.ok) {
-            setSaved(true);
-            setTimeout(() => setSaved(false), 3000);
-        }
-    };
-
     const breakEven = calcBreakEvenPrice(profile.costPerAcre, profile.expectedYield);
     const totalProd = profile.acres * profile.expectedYield;
     const costCategories: { key: keyof CostBreakdown; label: string }[] = [
@@ -108,6 +134,22 @@ export default function FarmEconomicsPage() {
         { key: 'other', label: 'Other' },
     ];
 
+    if (loading) {
+        return (
+            <div className="page-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+                <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                        width: 40, height: 40, border: '3px solid rgba(34,197,94,0.15)',
+                        borderTop: '3px solid #22c55e', borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite', margin: '0 auto 16px',
+                    }} />
+                    <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Loading your farm profile...</p>
+                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="page-container">
             <div className="page-header">
@@ -115,10 +157,19 @@ export default function FarmEconomicsPage() {
                     <h1 className="page-title">Farm Economics</h1>
                     <p className="page-subtitle">Your operation&apos;s cost structure and break-even analysis.</p>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-green btn-sm" onClick={handleSave}>
-                        {saved ? '✓ Saved' : '💾 Save Scenario'}
-                    </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{
+                        fontSize: 12, color: saveStatus === 'saving' ? 'var(--accent-yellow)'
+                            : saveStatus === 'saved' ? 'var(--accent-green)'
+                                : saveStatus === 'error' ? '#ef4444'
+                                    : 'var(--text-dim)',
+                        transition: 'color 0.3s',
+                    }}>
+                        {saveStatus === 'saving' ? '● Saving...'
+                            : saveStatus === 'saved' ? '✓ Saved'
+                                : saveStatus === 'error' ? '✕ Save failed'
+                                    : ''}
+                    </span>
                 </div>
             </div>
 
@@ -266,16 +317,6 @@ export default function FarmEconomicsPage() {
                     </div>
                 </div>
             )}
-
-            <LeadCaptureModal
-                isOpen={showLeadModal}
-                onClose={() => setShowLeadModal(false)}
-                onSubmit={() => {
-                    setShowLeadModal(false);
-                    setSaved(true);
-                    setTimeout(() => setSaved(false), 3000);
-                }}
-            />
         </div>
     );
 }
