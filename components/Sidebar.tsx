@@ -155,23 +155,25 @@ export function Sidebar() {
         }
         .sidebar-nav {
           flex: 1;
-          padding: 14px 12px 0;
+          padding: 20px 14px;
           display: flex;
           flex-direction: column;
-          gap: 2px;
+          justify-content: center;
+          gap: 6px;
           overflow-y: auto;
         }
         .sidebar-nav-item {
           display: flex;
           align-items: center;
-          gap: 12px;
-          padding: 10px 14px;
-          border-radius: 10px;
+          gap: 14px;
+          padding: 13px 16px;
+          border-radius: 12px;
           position: relative;
           text-decoration: none;
           color: #64748b;
-          font-size: 13.5px;
+          font-size: 14px;
           font-weight: 500;
+          letter-spacing: 0.01em;
           transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
           animation: sidebarFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
@@ -180,17 +182,19 @@ export function Sidebar() {
           to { opacity: 1; transform: translateX(0); }
         }
         .sidebar-nav-item:hover {
-          background: rgba(148, 163, 184, 0.04);
-          color: #94a3b8;
+          background: rgba(148, 163, 184, 0.06);
+          color: #cbd5e1;
+          transform: translateX(2px);
         }
         .sidebar-nav-item.active {
-          background: rgba(34, 197, 94, 0.06);
+          background: rgba(34, 197, 94, 0.08);
           color: #f1f5f9;
           font-weight: 600;
+          box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.08);
         }
         .sidebar-nav-icon {
-          font-size: 17px;
-          width: 24px;
+          font-size: 18px;
+          width: 28px;
           text-align: center;
           flex-shrink: 0;
         }
