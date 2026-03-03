@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from 'react';
 
 const MARKETING_YEARS = [2025, 2024, 2023, 2022, 2021, 2020];
-const STORAGE_KEY = 'farmer_risk_contracts';
 
 interface GrainContract {
     id: string;
@@ -28,16 +27,6 @@ const YEAR_COLORS: Record<number, string> = {
     2020: '#06b6d4',
 };
 
-// Seasonal price data (simulated corn futures by marketing year, $/bu)
-const SEASONAL_DATA: Record<number, { dayOfYear: number; price: number }[]> = {
-    2025: Array.from({ length: 180 }, (_, i) => ({ dayOfYear: i * 2, price: 4.20 + Math.sin(i * 0.05) * 0.35 + Math.random() * 0.1 })),
-    2024: Array.from({ length: 360 }, (_, i) => ({ dayOfYear: i, price: 4.55 + Math.sin(i * 0.04) * 0.40 - i * 0.001 + Math.random() * 0.08 })),
-    2023: Array.from({ length: 360 }, (_, i) => ({ dayOfYear: i, price: 5.10 + Math.sin(i * 0.03) * 0.50 - i * 0.002 + Math.random() * 0.08 })),
-    2022: Array.from({ length: 360 }, (_, i) => ({ dayOfYear: i, price: 5.80 + Math.sin(i * 0.035) * 0.70 - i * 0.003 + Math.random() * 0.1 })),
-    2021: Array.from({ length: 360 }, (_, i) => ({ dayOfYear: i, price: 3.90 + Math.sin(i * 0.04) * 0.60 + i * 0.002 + Math.random() * 0.08 })),
-    2020: Array.from({ length: 360 }, (_, i) => ({ dayOfYear: i, price: 3.30 + Math.sin(i * 0.05) * 0.30 + i * 0.002 + Math.random() * 0.05 })),
-};
-
 export default function HistoryPage() {
     const [selectedYear, setSelectedYear] = useState(2025);
     const [contracts, setContracts] = useState<GrainContract[]>([]);
@@ -53,40 +42,63 @@ export default function HistoryPage() {
         location: '',
     });
 
+    const [seasonalData, setSeasonalData] = useState<Record<number, { dayOfYear: number; price: number }[]>>({});
+    const [loadingData, setLoadingData] = useState(true);
+
     useEffect(() => {
-        try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            if (raw) setContracts(JSON.parse(raw));
-        } catch { }
+        Promise.all([
+            fetch('/api/contracts').then(r => r.json()),
+            fetch('/api/market/history?commodity=CORN').then(r => r.json())
+        ]).then(([contractsRes, historyRes]) => {
+            if (contractsRes.contracts) {
+                setContracts(contractsRes.contracts);
+            }
+            if (historyRes.success) {
+                setSeasonalData(historyRes.data);
+            }
+            setLoadingData(false);
+        }).catch(err => {
+            console.error('Failed to load data:', err);
+            setLoadingData(false);
+        });
     }, []);
 
-    const saveContracts = (updated: GrainContract[]) => {
-        setContracts(updated);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    };
-
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!form.contractNumber || !form.quantityBushels) return;
 
+        let payload: Partial<GrainContract> = {
+            ...form,
+            quantityBushels: parseInt(form.quantityBushels) || 0,
+            deliveryStart: `${selectedYear}-10-01`,
+            deliveryEnd: `${selectedYear + 1}-09-30`,
+            status: 'FILLED',
+        };
+
         if (editingId) {
-            saveContracts(contracts.map(c => c.id === editingId ? {
-                ...c,
-                ...form,
-                quantityBushels: parseInt(form.quantityBushels) || 0,
-                deliveryStart: `${selectedYear}-10-01`,
-                deliveryEnd: `${selectedYear + 1}-09-30`,
-                status: 'FILLED',
-            } : c));
+            payload.id = editingId;
         } else {
-            const newContract: GrainContract = {
-                id: Date.now().toString(),
-                ...form,
-                quantityBushels: parseInt(form.quantityBushels) || 0,
-                deliveryStart: `${selectedYear}-10-01`,
-                deliveryEnd: `${selectedYear + 1}-09-30`,
-                status: 'FILLED',
-            };
-            saveContracts([...contracts, newContract]);
+            payload.id = 'new';
+        }
+
+        try {
+            const res = await fetch('/api/contracts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    if (editingId) {
+                        setContracts(contracts.map(c => c.id === editingId ? data.contract : c));
+                    } else {
+                        setContracts([data.contract, ...contracts]);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Failed to save contract:', err);
         }
 
         setShowModal(false);
@@ -108,9 +120,16 @@ export default function HistoryPage() {
         setShowModal(true);
     };
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (confirm('Delete this contract?')) {
-            saveContracts(contracts.filter(c => c.id !== id));
+            try {
+                const res = await fetch(`/api/contracts?id=${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    setContracts(contracts.filter(c => c.id !== id));
+                }
+            } catch (err) {
+                console.error('Failed to delete contract:', err);
+            }
         }
     };
 
@@ -153,9 +172,9 @@ export default function HistoryPage() {
     const innerWidth = chartWidth - paddingLeft - paddingRight;
     const innerHeight = chartHeight - paddingTop - paddingBottom;
 
-    const allPrices = MARKETING_YEARS.flatMap(y => (SEASONAL_DATA[y] || []).map(p => p.price));
-    const minPrice = Math.min(...allPrices) * 0.97;
-    const maxPrice = Math.max(...allPrices) * 1.03;
+    const allPrices = MARKETING_YEARS.flatMap(y => (seasonalData[y] || []).map(p => p.price));
+    const minPrice = allPrices.length > 0 ? Math.min(...allPrices) * 0.97 : 3;
+    const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) * 1.03 : 6;
     const priceRange = maxPrice - minPrice;
 
     const getX = (day: number) => paddingLeft + (day / 365) * innerWidth;
@@ -334,10 +353,9 @@ export default function HistoryPage() {
 
                         {/* Year lines — oldest first so current draws on top */}
                         {[...MARKETING_YEARS].reverse().map(year => {
-                            const data = SEASONAL_DATA[year];
+                            const data = seasonalData[year];
                             if (!data || data.length < 2) return null;
-                            const sorted = [...data].sort((a, b) => a.dayOfYear - b.dayOfYear);
-                            const points = sorted.map(p => `${getX(p.dayOfYear)},${getY(p.price)}`).join(' ');
+                            const points = data.map(p => `${getX(p.dayOfYear)},${getY(p.price)}`).join(' ');
                             const isCurrent = year === MARKETING_YEARS[0];
 
                             return (
@@ -380,7 +398,7 @@ export default function HistoryPage() {
             </div>
 
             <div style={{ textAlign: 'center', marginTop: 24, fontSize: 12, color: 'var(--text-dim)', fontStyle: 'italic' }}>
-                ℹ️ Marketing analytics are stored locally on your browser.
+                ℹ️ Marketing analytics are saved directly to your account.
             </div>
 
             {/* Add/Edit Modal */}

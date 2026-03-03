@@ -18,6 +18,7 @@ model User {
   scenarios    Scenario[]
   farmProfile  FarmProfile?
   hedges       HedgePosition[]
+  contracts    GrainContract[]
 }
 
 model Scenario {
@@ -67,6 +68,26 @@ model HedgePosition {
   entryPrice     Float
   expiration     String?
   createdAt      DateTime @default(now())
+
+  @@index([userId])
+}
+
+model GrainContract {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contractNumber  String
+  commodity       String   @default("CORN")
+  type            String   @default("CASH")
+  quantityBushels Int
+  cashPrice       String
+  saleDate        String
+  deliveryStart   String
+  deliveryEnd     String
+  location        String
+  status          String   @default("FILLED")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([userId])
 }

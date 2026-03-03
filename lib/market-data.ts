@@ -80,14 +80,16 @@ export async function fetchHistoricalData(
             case '3mo': period1 = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000); break;
             case '6mo': period1 = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000); break;
             case '1y': period1 = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000); break;
+            case '5y': period1 = new Date(now.getTime() - 5 * 365 * 24 * 60 * 60 * 1000); break;
             default: period1 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
         }
 
-        let interval: '5m' | '15m' | '1h' | '1d';
+        let interval: '5m' | '15m' | '1h' | '1d' | '1wk' | '1mo';
         switch (range) {
             case '1d': interval = '5m'; break;
             case '5d': interval = '15m'; break;
             case '1mo': interval = '1h'; break;
+            case '5y': interval = '1d'; break;
             default: interval = '1d'; break;
         }
 
