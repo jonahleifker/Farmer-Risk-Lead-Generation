@@ -1,13 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import {
-    FarmProfile, createDefaultProfile,
+    FarmProfile, HedgeEntry, createDefaultProfile,
     calcBreakEvenPrice, calcTotalProduction,
     calcImpliedCashPrice, formatMoney, FUTURES_SYMBOLS,
 } from '@/lib/calculations';
-
-const STORAGE_KEY = 'farmer_risk_profile';
 
 type Goal = 'protect_downside' | 'lock_profit' | 'stay_flexible' | null;
 
@@ -22,32 +21,73 @@ interface StrategyOption {
 }
 
 export default function StrategiesPage() {
+    const { data: session } = useSession();
     const [profile, setProfile] = useState<FarmProfile>(createDefaultProfile('corn'));
+    const [hedges, setHedges] = useState<HedgeEntry[]>([]);
     const [pctToProtect, setPctToProtect] = useState(30);
     const [selectedGoal, setSelectedGoal] = useState<Goal>(null);
     const [currentFutures, setCurrentFutures] = useState(0);
 
-    useEffect(() => {
+    const loadData = useCallback(async () => {
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            if (raw) setProfile(JSON.parse(raw));
+            if (session?.user) {
+                const [profileRes, hedgesRes] = await Promise.all([
+                    fetch('/api/profile'),
+                    fetch('/api/hedges'),
+                ]);
+                const profileData = await profileRes.json();
+                const hedgesData = await hedgesRes.json();
+                if (profileData.profile) {
+                    const p = profileData.profile;
+                    setProfile({
+                        id: p.id,
+                        commodity: p.commodity || 'corn',
+                        acres: p.acres ?? 1000,
+                        expectedYield: p.expectedYield ?? 200,
+                        costPerAcre: p.costPerAcre ?? 0,
+                        basisAssumption: p.basisAssumption ?? -0.30,
+                        storageCost: p.storageCost ?? 0,
+                        desiredMargin: p.desiredMargin ?? 0.50,
+                        breakEvenPrice: calcBreakEvenPrice(p.costPerAcre ?? 0, p.expectedYield ?? 200),
+                        updatedAt: p.updatedAt || new Date().toISOString(),
+                    });
+                }
+                if (hedgesData.hedges) {
+                    setHedges(hedgesData.hedges.map((h: Record<string, unknown>) => ({
+                        id: h.id as string,
+                        profileId: h.userId as string,
+                        bushelsHedged: h.bushelsHedged as number,
+                        contractType: h.contractType as string,
+                        action: (h.action as string) || 'sell',
+                        entryPrice: h.entryPrice as number,
+                        expiration: (h.expiration as string) || '',
+                        createdAt: h.createdAt as string,
+                    })));
+                }
+            } else {
+                const raw = localStorage.getItem('farmer_risk_profile');
+                if (raw) setProfile(JSON.parse(raw));
+            }
         } catch { }
         // Fetch live market price
-        fetch('/api/market/quotes')
-            .then(r => r.json())
-            .then(data => {
-                if (data.success && data.quotes) {
-                    const sym = FUTURES_SYMBOLS[profile.commodity];
-                    const q = data.quotes.find((q: { symbol: string }) => q.symbol === sym);
-                    if (q) setCurrentFutures(q.regularMarketPrice / 100);
-                }
-            })
-            .catch(() => { });
-    }, [profile.commodity]);
+        try {
+            const res = await fetch('/api/market/quotes');
+            const data = await res.json();
+            if (data.success && data.data) {
+                const sym = FUTURES_SYMBOLS[profile.commodity];
+                const q = data.data.find((q: { symbol: string }) => q.symbol === sym);
+                if (q) setCurrentFutures(q.regularMarketPrice / 100);
+            }
+        } catch { }
+    }, [session, profile.commodity]);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
 
     const breakEven = calcBreakEvenPrice(profile.costPerAcre, profile.expectedYield);
     const totalProd = calcTotalProduction(profile.acres, profile.expectedYield);
-    const totalHedged = 0; // TODO: pull from positions
+    const totalHedged = hedges.reduce((sum, h) => sum + h.bushelsHedged, 0);
     const availableBushels = Math.max(0, totalProd - totalHedged);
     const targetBushels = availableBushels * (pctToProtect / 100);
     const currentCash = currentFutures > 0

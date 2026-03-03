@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { AnimatedNumber } from '@/components/AnimatedNumber';
 import {
     HedgeEntry, FarmProfile, createDefaultProfile,
     calcTotalProduction, calcHedgePnL, calcHedgeCoverage,
@@ -191,33 +192,65 @@ export default function PositionsPage() {
                     </div>
                     <div className="metric-item">
                         <div className="metric-label">Unrealized P&L</div>
-                        <div className="metric-value" style={{ color: totalPnL >= 0 ? '#22c55e' : '#ef4444' }}>
-                            {formatMoney(totalPnL)}
+                        <div className="metric-value">
+                            <AnimatedNumber value={totalPnL} prefix="$" color={totalPnL >= 0 ? '#22c55e' : '#ef4444'} />
                         </div>
                     </div>
                     <div className="metric-item">
                         <div className="metric-label">Current Price</div>
-                        <div className="metric-value">${currentPrice.toFixed(2)}</div>
+                        <div className="metric-value"><AnimatedNumber value={currentPrice} prefix="$" /></div>
                     </div>
                 </div>
-                {/* Coverage Bar */}
-                <div style={{ marginTop: 16, padding: '12px 16px', background: 'var(--bg-primary)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Hedge Coverage</span>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: coverage >= 75 ? '#22c55e' : coverage >= 25 ? 'var(--accent-yellow)' : '#ef4444' }}>
-                            {totalBushelsHedged.toLocaleString()} / {totalProd.toLocaleString()} bu ({coverage.toFixed(0)}%)
-                        </span>
-                    </div>
-                    <div style={{ height: 8, borderRadius: 4, background: 'rgba(148,163,184,0.08)', overflow: 'hidden' }}>
-                        <div style={{
-                            height: '100%', borderRadius: 4, transition: 'width 0.5s ease',
-                            width: `${Math.min(coverage, 100)}%`,
-                            background: coverage >= 75 ? 'linear-gradient(90deg, #22c55e, #16a34a)'
-                                : coverage >= 25 ? 'linear-gradient(90deg, #eab308, #f59e0b)'
-                                    : 'linear-gradient(90deg, #ef4444, #dc2626)',
-                        }} />
-                    </div>
-                </div>
+                {/* Coverage Donut Chart */}
+                {(() => {
+                    const radius = 54;
+                    const circumference = 2 * Math.PI * radius;
+                    const fillPct = Math.min(coverage, 100);
+                    const offset = circumference - (fillPct / 100) * circumference;
+                    const donutColor = coverage >= 75 ? '#22c55e' : coverage >= 25 ? '#f59e0b' : '#ef4444';
+                    return (
+                        <div className="donut-container">
+                            <svg className="donut-svg" viewBox="0 0 140 140">
+                                <circle className="donut-track" cx="70" cy="70" r={radius} />
+                                <circle className="donut-fill" cx="70" cy="70" r={radius}
+                                    stroke={donutColor}
+                                    strokeDasharray={circumference}
+                                    strokeDashoffset={offset}
+                                />
+                                <text className="donut-center-text" x="70" y="66" textAnchor="middle" dominantBaseline="middle">
+                                    {coverage.toFixed(0)}%
+                                </text>
+                                <text className="donut-center-label" x="70" y="84" textAnchor="middle" dominantBaseline="middle">
+                                    Hedged
+                                </text>
+                            </svg>
+                            <div className="donut-legend">
+                                <div className="donut-legend-item">
+                                    <div className="donut-legend-dot" style={{ background: donutColor }} />
+                                    <div>
+                                        <div className="donut-legend-label">Hedged</div>
+                                        <div className="donut-legend-value">{totalBushelsHedged.toLocaleString()} bu</div>
+                                    </div>
+                                </div>
+                                <div className="donut-legend-item">
+                                    <div className="donut-legend-dot" style={{ background: 'rgba(148,163,184,0.15)' }} />
+                                    <div>
+                                        <div className="donut-legend-label">Unhedged</div>
+                                        <div className="donut-legend-value">{unhedged.toLocaleString()} bu</div>
+                                    </div>
+                                </div>
+                                <div className="donut-legend-item">
+                                    <div className="donut-legend-dot" style={{ background: 'var(--accent-blue)' }} />
+                                    <div>
+                                        <div className="donut-legend-label">Total Production</div>
+                                        <div className="donut-legend-value">{totalProd.toLocaleString()} bu</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+
             </div>
 
             {/* Add form */}
