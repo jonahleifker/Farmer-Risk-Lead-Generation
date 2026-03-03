@@ -105,11 +105,11 @@ export default function MarketOpportunityPage() {
     const loadChart = useCallback(async () => {
         setChartLoading(true);
         try {
-            const sym = FUTURES_SYMBOLS[profile.commodity];
-            const res = await fetch(`/api/market/history?symbol=${sym}&range=${chartRange}`);
+            const sym = encodeURIComponent(FUTURES_SYMBOLS[profile.commodity]);
+            const res = await fetch(`/api/market/history/${sym}?range=${chartRange}`);
             const json = await res.json();
-            if (json.success && json.data) {
-                setChartData(json.data);
+            if (json.success && json.prices) {
+                setChartData(json.prices);
             }
         } catch {
             setChartData([]);
