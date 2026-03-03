@@ -18,10 +18,10 @@ export default function PositionsPage() {
     const [showForm, setShowForm] = useState(false);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({
-        bushelsHedged: 5000,
+        bushelsHedged: '5000',
         contractType: 'futures' as HedgeEntry['contractType'],
         action: 'sell' as 'buy' | 'sell',
-        entryPrice: 0,
+        entryPrice: '',
         expiration: '',
     });
 
@@ -94,7 +94,11 @@ export default function PositionsPage() {
             const res = await fetch('/api/hedges', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(form),
+                body: JSON.stringify({
+                    ...form,
+                    bushelsHedged: parseInt(form.bushelsHedged) || 0,
+                    entryPrice: parseFloat(form.entryPrice) || 0,
+                }),
             });
             if (res.ok) {
                 const data = await res.json();
@@ -109,7 +113,7 @@ export default function PositionsPage() {
                     createdAt: data.hedge.createdAt,
                 }, ...prev]);
                 setShowForm(false);
-                setForm({ bushelsHedged: 5000, contractType: 'futures', action: 'sell', entryPrice: 0, expiration: '' });
+                setForm({ bushelsHedged: '5000', contractType: 'futures', action: 'sell', entryPrice: '', expiration: '' });
             }
         } catch (err) {
             console.error('Failed to add hedge:', err);
@@ -278,15 +282,22 @@ export default function PositionsPage() {
                         </div>
                         <div className="input-group" style={{ flex: 1, minWidth: 140 }}>
                             <label className="input-label">Bushels</label>
-                            <input className="input-field" type="number" value={form.bushelsHedged}
-                                onChange={(e) => setForm({ ...form, bushelsHedged: parseInt(e.target.value) || 0 })} />
+                            <input className="input-field" type="text" inputMode="numeric" value={form.bushelsHedged}
+                                onChange={(e) => {
+                                    const v = e.target.value;
+                                    if (v === '' || /^\d*$/.test(v)) setForm({ ...form, bushelsHedged: v });
+                                }} />
                         </div>
                         <div className="input-group" style={{ flex: 1, minWidth: 140 }}>
                             <label className="input-label">Entry Price</label>
                             <div className="input-with-prefix">
                                 <span className="input-prefix">$</span>
-                                <input type="number" step="0.01" value={form.entryPrice}
-                                    onChange={(e) => setForm({ ...form, entryPrice: parseFloat(e.target.value) || 0 })} />
+                                <input type="text" inputMode="decimal" value={form.entryPrice}
+                                    placeholder="0.00"
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        if (v === '' || /^\d*\.?\d*$/.test(v)) setForm({ ...form, entryPrice: v });
+                                    }} />
                             </div>
                         </div>
                         <div className="input-group" style={{ flex: 1, minWidth: 140 }}>

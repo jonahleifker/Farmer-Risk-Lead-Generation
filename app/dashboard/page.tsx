@@ -94,7 +94,8 @@ export default function FarmEconomicsPage() {
     };
 
     const updateCost = (key: keyof CostBreakdown, value: string) => {
-        const numVal = parseFloat(value) || 0;
+        const numVal = value === '' ? 0 : parseFloat(value);
+        if (isNaN(numVal)) return;
         const breakdown = { ...(profile.costBreakdown || {}), [key]: numVal } as CostBreakdown;
         const total = Object.values(breakdown).reduce((s, v) => s + v, 0);
         updateField({ costBreakdown: breakdown, costPerAcre: total });
@@ -216,14 +217,10 @@ export default function FarmEconomicsPage() {
                                     🧮
                                 </button>
                             </div>
-                            <div className="input-with-prefix">
-                                <span className="input-prefix">$</span>
-                                <input
-                                    type="number"
-                                    value={profile.costBreakdown?.[cat.key] || 0}
-                                    onChange={(e) => updateCost(cat.key, e.target.value)}
-                                />
-                            </div>
+                            <CostInput
+                                value={profile.costBreakdown?.[cat.key] || 0}
+                                onChange={(v) => updateCost(cat.key, v)}
+                            />
                         </div>
                     ))}
                 </div>
@@ -352,6 +349,35 @@ function InputField({ label, value, prefix, suffix, onUpdate, allowNegative }: {
                 />
                 {suffix && <span style={{ color: 'var(--text-muted)', fontSize: 13, marginLeft: 4 }}>{suffix}</span>}
             </div>
+        </div>
+    );
+}
+
+function CostInput({ value, onChange }: { value: number; onChange: (v: string) => void }) {
+    const [text, setText] = useState(value.toString());
+
+    useEffect(() => { setText(value.toString()); }, [value]);
+
+    const handleBlur = () => {
+        onChange(text);
+    };
+
+    return (
+        <div className="input-with-prefix">
+            <span className="input-prefix">$</span>
+            <input
+                type="text"
+                inputMode="decimal"
+                value={text}
+                onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === '' || v === '-' || /^-?\d*\.?\d*$/.test(v)) {
+                        setText(v);
+                    }
+                }}
+                onBlur={handleBlur}
+                onKeyDown={(e) => e.key === 'Enter' && handleBlur()}
+            />
         </div>
     );
 }
