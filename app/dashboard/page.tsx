@@ -159,18 +159,35 @@ export default function FarmEconomicsPage() {
                     <p className="page-subtitle">Your operation&apos;s cost structure and break-even analysis.</p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{
-                        fontSize: 12, color: saveStatus === 'saving' ? 'var(--accent-yellow)'
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '6px 14px', borderRadius: 20,
+                        fontSize: 12, fontWeight: 600,
+                        background: saveStatus === 'saving' ? 'rgba(245, 158, 11, 0.1)'
+                            : saveStatus === 'saved' ? 'rgba(34, 197, 94, 0.1)'
+                                : saveStatus === 'error' ? 'rgba(239, 68, 68, 0.1)'
+                                    : 'rgba(148, 163, 184, 0.06)',
+                        border: `1px solid ${saveStatus === 'saving' ? 'rgba(245, 158, 11, 0.25)'
+                            : saveStatus === 'saved' ? 'rgba(34, 197, 94, 0.25)'
+                                : saveStatus === 'error' ? 'rgba(239, 68, 68, 0.25)'
+                                    : 'rgba(148, 163, 184, 0.1)'}`,
+                        color: saveStatus === 'saving' ? 'var(--accent-yellow)'
                             : saveStatus === 'saved' ? 'var(--accent-green)'
                                 : saveStatus === 'error' ? '#ef4444'
-                                    : 'var(--text-dim)',
-                        transition: 'color 0.3s',
+                                    : 'var(--text-muted)',
+                        transition: 'all 0.3s',
                     }}>
-                        {saveStatus === 'saving' ? '● Saving...'
-                            : saveStatus === 'saved' ? '✓ Saved'
-                                : saveStatus === 'error' ? '✕ Save failed'
-                                    : ''}
-                    </span>
+                        <span style={{ fontSize: 10 }}>
+                            {saveStatus === 'saving' ? '⏳'
+                                : saveStatus === 'saved' ? '✓'
+                                    : saveStatus === 'error' ? '✕'
+                                        : '☁️'}
+                        </span>
+                        {saveStatus === 'saving' ? 'Saving...'
+                            : saveStatus === 'saved' ? 'Saved to cloud'
+                                : saveStatus === 'error' ? 'Save failed'
+                                    : 'Auto-save on'}
+                    </div>
                 </div>
             </div>
 
