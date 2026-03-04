@@ -51,6 +51,8 @@ model FarmProfile {
   expectedYield   Float    @default(200)
   costPerAcre     Float    @default(0)
   basisAssumption Float    @default(-0.30)
+  basisMode       String   @default("manual") // 'manual' | 'auto'
+  zipCode         String?
   storageCost     Float    @default(0)
   desiredMargin   Float    @default(0.50)
   costBreakdown   Json?

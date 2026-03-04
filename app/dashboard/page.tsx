@@ -6,6 +6,7 @@ import {
     FarmProfile, CostBreakdown, CommodityType, createDefaultProfile,
     calcBreakEvenPrice,
 } from '@/lib/calculations';
+import { fetchNearbyCoOps, CoOpBid } from '@/lib/basis';
 
 export default function FarmEconomicsPage() {
     const { data: session } = useSession();
@@ -17,6 +18,11 @@ export default function FarmEconomicsPage() {
     const [calcExpense, setCalcExpense] = useState('');
     const [calcAcres, setCalcAcres] = useState('');
     const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Basis Lookup State
+    const [coOps, setCoOps] = useState<CoOpBid[]>([]);
+    const [isFetchingCoOps, setIsFetchingCoOps] = useState(false);
+    const [zipInput, setZipInput] = useState('');
 
     // Load profile from API on mount
     useEffect(() => {
@@ -44,6 +50,9 @@ export default function FarmEconomicsPage() {
                         ),
                         updatedAt: data.profile.updatedAt || new Date().toISOString(),
                     });
+                    if (data.profile.zipCode) {
+                        setZipInput(data.profile.zipCode);
+                    }
                 }
             })
             .catch(console.error)
@@ -65,6 +74,8 @@ export default function FarmEconomicsPage() {
                         expectedYield: p.expectedYield,
                         costPerAcre: p.costPerAcre,
                         basisAssumption: p.basisAssumption,
+                        basisMode: p.basisMode,
+                        zipCode: p.zipCode,
                         storageCost: p.storageCost,
                         desiredMargin: p.desiredMargin,
                         costBreakdown: p.costBreakdown,
@@ -134,6 +145,28 @@ export default function FarmEconomicsPage() {
         { key: 'labor', label: 'Labor' },
         { key: 'other', label: 'Other' },
     ];
+
+    // Fetch Nearby Co-ops Function
+    const handleZipLookup = async () => {
+        if (!zipInput || zipInput.length < 5) return;
+        setIsFetchingCoOps(true);
+        updateField({ zipCode: zipInput });
+        try {
+            const bids = await fetchNearbyCoOps(zipInput, profile.commodity);
+            setCoOps(bids);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsFetchingCoOps(false);
+        }
+    };
+
+    // Keep co-ops in sync if zipCode or commodity changes
+    useEffect(() => {
+        if (profile.basisMode === 'auto' && profile.zipCode) {
+            fetchNearbyCoOps(profile.zipCode, profile.commodity).then(setCoOps);
+        }
+    }, [profile.basisMode, profile.zipCode, profile.commodity]);
 
     if (loading) {
         return (
@@ -207,13 +240,116 @@ export default function FarmEconomicsPage() {
                         suffix="ac" onUpdate={(v) => updateField({ acres: v })} />
                     <InputField label="Expected Yield" value={profile.expectedYield} prefix=""
                         suffix="bu/ac" onUpdate={(v) => updateField({ expectedYield: v })} />
-                    <InputField label="Basis Assumption" value={profile.basisAssumption} prefix="$"
-                        suffix="/bu" onUpdate={(v) => updateField({ basisAssumption: v })} allowNegative />
                     <InputField label="Storage Cost" value={profile.storageCost} prefix="$"
                         suffix="/bu" onUpdate={(v) => updateField({ storageCost: v })} />
                     <InputField label="Desired Margin" value={profile.desiredMargin || 0} prefix="$"
                         suffix="/bu" onUpdate={(v) => updateField({ desiredMargin: v })} />
                 </div>
+            </div>
+
+            {/* Basis Configuration */}
+            <div className="card">
+                <h3 className="card-title">Basis Configuration</h3>
+
+                <div style={{ display: 'flex', gap: 16, marginBottom: 20 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                        <input type="radio" name="basisMode"
+                            checked={profile.basisMode === 'manual'}
+                            onChange={() => updateField({ basisMode: 'manual' })} />
+                        <span>Manual Entry</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                        <input type="radio" name="basisMode"
+                            checked={profile.basisMode === 'auto'}
+                            onChange={() => updateField({ basisMode: 'auto' })} />
+                        <span>Lookup by Zip Code</span>
+                    </label>
+                </div>
+
+                {profile.basisMode === 'manual' ? (
+                    <div style={{ maxWidth: 200 }}>
+                        <InputField label="Basis Assumption" value={profile.basisAssumption} prefix="$"
+                            suffix="/bu" onUpdate={(v) => updateField({ basisAssumption: v })} allowNegative />
+                    </div>
+                ) : (
+                    <div className="basis-lookup-container" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, maxWidth: 300 }}>
+                            <div style={{ flex: 1 }}>
+                                <label className="input-label">Zip Code</label>
+                                <input
+                                    className="input-field"
+                                    type="text"
+                                    value={zipInput}
+                                    placeholder="Enter Zip Code"
+                                    onChange={(e) => setZipInput(e.target.value)}
+                                    maxLength={5}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleZipLookup()}
+                                />
+                            </div>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleZipLookup}
+                                disabled={isFetchingCoOps || zipInput.length < 5}
+                            >
+                                {isFetchingCoOps ? 'Searching...' : 'Search'}
+                            </button>
+                        </div>
+
+                        {profile.zipCode && coOps.length > 0 && (
+                            <div className="coop-list" style={{ marginTop: 8 }}>
+                                <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                                    Select a nearby location to use its current basis.
+                                </p>
+                                <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+                                    {coOps.map(coop => (
+                                        <div
+                                            key={coop.id}
+                                            onClick={() => updateField({ basisAssumption: coop.basis })}
+                                            style={{
+                                                border: `1px solid ${profile.basisAssumption === coop.basis ? 'var(--accent-blue)' : 'var(--border)'}`,
+                                                background: profile.basisAssumption === coop.basis ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-primary)',
+                                                borderRadius: 8, padding: 16, cursor: 'pointer',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                                <strong style={{ fontSize: 15 }}>{coop.name}</strong>
+                                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{coop.distanceMiles.toFixed(1)} miles</span>
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                                                <div>
+                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Cash Bid</div>
+                                                    <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                        ${coop.cashBid.toFixed(2)}
+                                                    </div>
+                                                </div>
+                                                <div style={{ textAlign: 'right' }}>
+                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Basis</div>
+                                                    <div style={{ fontSize: 16, fontWeight: 600, color: coop.basis >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                                                        {coop.basis > 0 ? '+' : ''}{coop.basis.toFixed(2)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {profile.basisAssumption === coop.basis && (
+                                                <div style={{ marginTop: 12, fontSize: 12, color: 'var(--accent-blue)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    <span>✓ Currently Selected</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+                                    * Powered by USDA AMS MARS (Mocked)
+                                </div>
+                            </div>
+                        )}
+                        {profile.zipCode && coOps.length === 0 && !isFetchingCoOps && (
+                            <div style={{ padding: 16, background: 'rgba(239, 68, 68, 0.05)', color: '#ef4444', borderRadius: 8, fontSize: 14 }}>
+                                No co-ops found near this zip code.
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Cost Breakdown */}
@@ -287,51 +423,53 @@ export default function FarmEconomicsPage() {
             </div>
 
             {/* Per-Acre Calculator Modal */}
-            {showCalc && (
-                <div className="modal-overlay" onClick={() => setShowCalc(false)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3 className="modal-title">Calculate {calcField?.label}</h3>
-                            <button className="modal-close" onClick={() => setShowCalc(false)}>×</button>
-                        </div>
-                        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
-                            Convert a bulk expense bill into a per-acre cost.
-                        </p>
+            {
+                showCalc && (
+                    <div className="modal-overlay" onClick={() => setShowCalc(false)}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()}>
+                            <div className="modal-header">
+                                <h3 className="modal-title">Calculate {calcField?.label}</h3>
+                                <button className="modal-close" onClick={() => setShowCalc(false)}>×</button>
+                            </div>
+                            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+                                Convert a bulk expense bill into a per-acre cost.
+                            </p>
 
-                        <div className="input-group">
-                            <label className="input-label">Total Expense Bill ($)</label>
-                            <input className="input-field" type="number" placeholder="e.g. 50000"
-                                value={calcExpense} onChange={e => setCalcExpense(e.target.value)} autoFocus />
-                        </div>
+                            <div className="input-group">
+                                <label className="input-label">Total Expense Bill ($)</label>
+                                <input className="input-field" type="number" placeholder="e.g. 50000"
+                                    value={calcExpense} onChange={e => setCalcExpense(e.target.value)} autoFocus />
+                            </div>
 
-                        <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: 12, margin: '8px 0', letterSpacing: 1 }}>
-                            ÷ DIVIDED BY ÷
-                        </div>
+                            <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: 12, margin: '8px 0', letterSpacing: 1 }}>
+                                ÷ DIVIDED BY ÷
+                            </div>
 
-                        <div className="input-group">
-                            <label className="input-label">Total Farm Acres</label>
-                            <input className="input-field" type="number" placeholder="e.g. 1000"
-                                value={calcAcres} onChange={e => setCalcAcres(e.target.value)} />
-                        </div>
+                            <div className="input-group">
+                                <label className="input-label">Total Farm Acres</label>
+                                <input className="input-field" type="number" placeholder="e.g. 1000"
+                                    value={calcAcres} onChange={e => setCalcAcres(e.target.value)} />
+                            </div>
 
-                        <div style={{
-                            background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.2)',
-                            borderRadius: 8, padding: 16, display: 'flex', justifyContent: 'space-between',
-                            alignItems: 'center', margin: '16px 0',
-                        }}>
-                            <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>Result:</span>
-                            <span style={{ color: 'var(--accent-blue)', fontSize: 22, fontWeight: 700 }}>
-                                ${calcResult} / acre
-                            </span>
-                        </div>
+                            <div style={{
+                                background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.2)',
+                                borderRadius: 8, padding: 16, display: 'flex', justifyContent: 'space-between',
+                                alignItems: 'center', margin: '16px 0',
+                            }}>
+                                <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>Result:</span>
+                                <span style={{ color: 'var(--accent-blue)', fontSize: 22, fontWeight: 700 }}>
+                                    ${calcResult} / acre
+                                </span>
+                            </div>
 
-                        <button className="btn btn-primary" style={{ width: '100%' }} onClick={applyCalc}>
-                            Apply to {calcField?.label}
-                        </button>
+                            <button className="btn btn-primary" style={{ width: '100%' }} onClick={applyCalc}>
+                                Apply to {calcField?.label}
+                            </button>
+                        </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }
 

@@ -23,6 +23,8 @@ export interface FarmProfile {
     costPerAcre: number;         // $/acre
     breakEvenPrice: number;      // $/bu — auto-calculated or manual
     basisAssumption: number;     // $/bu (typically negative, e.g., -0.30)
+    basisMode?: 'manual' | 'auto';
+    zipCode?: string;
     storageCost: number;         // $/bu (optional, default 0)
     desiredMargin?: number;      // $/bu for Comfort Price
     targetProfit?: number;       // The user's target profit goal
@@ -185,6 +187,8 @@ export function createDefaultProfile(commodity: CommodityType = 'corn'): FarmPro
         costPerAcre: commodity === 'corn' ? 800 : 450,
         breakEvenPrice: 0,
         basisAssumption: commodity === 'corn' ? -0.30 : -0.40,
+        basisMode: 'manual',
+        zipCode: '',
         storageCost: 0,
         desiredMargin: 0.50,
         costBreakdown: {
