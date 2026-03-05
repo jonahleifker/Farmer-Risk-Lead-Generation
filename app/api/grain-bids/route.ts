@@ -56,10 +56,10 @@ export async function GET(request: Request) {
             .filter(b => b.distance <= radiusMiles)
             .sort((a, b) => a.distance - b.distance);
 
-        // Deduplicate: keep the nearest bid per facility+deliveryPeriod
+        // Deduplicate: keep only one bid per facility (nearest delivery month)
         const seen = new Set<string>();
         const uniqueBids = nearbyBids.filter(b => {
-            const key = `${b.facility}-${b.deliveryStart}`;
+            const key = `${b.facility}-${b.city}-${b.state}`;
             if (seen.has(key)) return false;
             seen.add(key);
             return true;
