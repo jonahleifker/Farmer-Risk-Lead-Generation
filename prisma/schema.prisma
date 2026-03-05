@@ -100,3 +100,25 @@ model Lead {
   source    String   @default("dashboard")
   createdAt DateTime @default(now())
 }
+
+model GrainBid {
+  id              String   @id @default(cuid())
+  facility        String
+  company         String   // Agricharts subdomain / source name
+  city            String?
+  state           String?
+  zip             String?
+  lat             Float?
+  lon             Float?
+  commodity       String   // 'corn' | 'soybeans'
+  cashPrice       Float?
+  basis           Float    // in dollars (e.g., -0.45)
+  futuresContract String?  // e.g., 'ZCK26'
+  deliveryStart   String?
+  deliveryEnd     String?
+  source          String   @default("agricharts")
+  fetchedAt       DateTime @default(now())
+
+  @@index([commodity])
+  @@index([state])
+}

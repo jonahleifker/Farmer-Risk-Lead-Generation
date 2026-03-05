@@ -6,7 +6,21 @@ import {
     FarmProfile, CostBreakdown, CommodityType, createDefaultProfile,
     calcBreakEvenPrice,
 } from '@/lib/calculations';
-import { fetchNearbyCoOps, CoOpBid } from '@/lib/basis';
+
+interface GrainBid {
+    facility: string;
+    company: string;
+    city: string | null;
+    state: string | null;
+    commodity: string;
+    cashPrice: number | null;
+    basis: number;
+    futuresContract: string | null;
+    deliveryStart: string | null;
+    deliveryEnd: string | null;
+    distance: number;
+    fetchedAt: string;
+}
 
 export default function FarmEconomicsPage() {
     const { data: session } = useSession();
@@ -20,9 +34,10 @@ export default function FarmEconomicsPage() {
     const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Basis Lookup State
-    const [coOps, setCoOps] = useState<CoOpBid[]>([]);
+    const [coOps, setCoOps] = useState<GrainBid[]>([]);
     const [isFetchingCoOps, setIsFetchingCoOps] = useState(false);
     const [zipInput, setZipInput] = useState('');
+    const [bidRefreshStatus, setBidRefreshStatus] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle');
 
     // Load profile from API on mount
     useEffect(() => {
@@ -146,14 +161,17 @@ export default function FarmEconomicsPage() {
         { key: 'other', label: 'Other' },
     ];
 
-    // Fetch Nearby Co-ops Function
+    // Fetch grain bids from aggregated data
     const handleZipLookup = async () => {
         if (!zipInput || zipInput.length < 5) return;
         setIsFetchingCoOps(true);
         updateField({ zipCode: zipInput });
         try {
-            const bids = await fetchNearbyCoOps(zipInput, profile.commodity);
-            setCoOps(bids);
+            const res = await fetch(`/api/grain-bids?zip=${zipInput}&commodity=${profile.commodity}`);
+            if (res.ok) {
+                const data = await res.json();
+                setCoOps(data.bids || []);
+            }
         } catch (e) {
             console.error(e);
         } finally {
@@ -161,10 +179,37 @@ export default function FarmEconomicsPage() {
         }
     };
 
+    // Trigger a data refresh from all co-op sources
+    const handleRefreshBids = async () => {
+        setBidRefreshStatus('refreshing');
+        try {
+            const res = await fetch('/api/grain-bids/refresh', { method: 'POST' });
+            if (res.ok) {
+                setBidRefreshStatus('done');
+                // Re-fetch bids after refresh
+                if (profile.zipCode) {
+                    const bidsRes = await fetch(`/api/grain-bids?zip=${profile.zipCode}&commodity=${profile.commodity}`);
+                    if (bidsRes.ok) {
+                        const data = await bidsRes.json();
+                        setCoOps(data.bids || []);
+                    }
+                }
+            } else {
+                setBidRefreshStatus('error');
+            }
+        } catch {
+            setBidRefreshStatus('error');
+        }
+        setTimeout(() => setBidRefreshStatus('idle'), 3000);
+    };
+
     // Keep co-ops in sync if zipCode or commodity changes
     useEffect(() => {
         if (profile.basisMode === 'auto' && profile.zipCode) {
-            fetchNearbyCoOps(profile.zipCode, profile.commodity).then(setCoOps);
+            fetch(`/api/grain-bids?zip=${profile.zipCode}&commodity=${profile.commodity}`)
+                .then(res => res.json())
+                .then(data => setCoOps(data.bids || []))
+                .catch(console.error);
         }
     }, [profile.basisMode, profile.zipCode, profile.commodity]);
 
@@ -298,39 +343,44 @@ export default function FarmEconomicsPage() {
                         {profile.zipCode && coOps.length > 0 && (
                             <div className="coop-list" style={{ marginTop: 8 }}>
                                 <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
-                                    Select a nearby location to use its current basis.
+                                    Select a nearby elevator to use its current basis.
                                 </p>
                                 <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-                                    {coOps.map(coop => (
+                                    {coOps.map((bid, idx) => (
                                         <div
-                                            key={coop.id}
-                                            onClick={() => updateField({ basisAssumption: coop.basis })}
+                                            key={`${bid.facility}-${bid.deliveryStart}-${idx}`}
+                                            onClick={() => updateField({ basisAssumption: bid.basis })}
                                             style={{
-                                                border: `1px solid ${profile.basisAssumption === coop.basis ? 'var(--accent-blue)' : 'var(--border)'}`,
-                                                background: profile.basisAssumption === coop.basis ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-primary)',
+                                                border: `1px solid ${profile.basisAssumption === bid.basis ? 'var(--accent-blue)' : 'var(--border)'}`,
+                                                background: profile.basisAssumption === bid.basis ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-primary)',
                                                 borderRadius: 8, padding: 16, cursor: 'pointer',
                                                 transition: 'all 0.2s'
                                             }}
                                         >
                                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                                                <strong style={{ fontSize: 15 }}>{coop.name}</strong>
-                                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{coop.distanceMiles.toFixed(1)} miles</span>
+                                                <strong style={{ fontSize: 14 }}>{bid.facility}</strong>
+                                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{bid.distance} mi</span>
                                             </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                                            {bid.city && (
+                                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                                    {bid.city}{bid.state ? `, ${bid.state}` : ''}
+                                                </div>
+                                            )}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
                                                 <div>
-                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Cash Bid</div>
-                                                    <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
-                                                        ${coop.cashBid.toFixed(2)}
+                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Basis</div>
+                                                    <div style={{ fontSize: 18, fontWeight: 700, color: bid.basis >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                                                        {bid.basis > 0 ? '+' : ''}{bid.basis.toFixed(2)}
                                                     </div>
                                                 </div>
                                                 <div style={{ textAlign: 'right' }}>
-                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Basis</div>
-                                                    <div style={{ fontSize: 16, fontWeight: 600, color: coop.basis >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                                                        {coop.basis > 0 ? '+' : ''}{coop.basis.toFixed(2)}
+                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Delivery</div>
+                                                    <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                                                        {bid.futuresContract || 'N/A'}
                                                     </div>
                                                 </div>
                                             </div>
-                                            {profile.basisAssumption === coop.basis && (
+                                            {profile.basisAssumption === bid.basis && (
                                                 <div style={{ marginTop: 12, fontSize: 12, color: 'var(--accent-blue)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                     <span>✓ Currently Selected</span>
                                                 </div>
@@ -338,14 +388,25 @@ export default function FarmEconomicsPage() {
                                         </div>
                                     ))}
                                 </div>
-                                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
-                                    * Powered by USDA AMS MARS (Mocked)
+                                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <button
+                                        onClick={handleRefreshBids}
+                                        disabled={bidRefreshStatus === 'refreshing'}
+                                        style={{
+                                            background: 'none', border: '1px solid var(--border)',
+                                            borderRadius: 4, padding: '4px 10px', cursor: 'pointer',
+                                            fontSize: 11, color: 'var(--text-muted)',
+                                        }}
+                                    >
+                                        {bidRefreshStatus === 'refreshing' ? '↻ Refreshing...' : bidRefreshStatus === 'done' ? '✓ Updated' : '↻ Refresh Data'}
+                                    </button>
+                                    <span>Aggregated from Midwest grain elevators</span>
                                 </div>
                             </div>
                         )}
                         {profile.zipCode && coOps.length === 0 && !isFetchingCoOps && (
                             <div style={{ padding: 16, background: 'rgba(239, 68, 68, 0.05)', color: '#ef4444', borderRadius: 8, fontSize: 14 }}>
-                                No co-ops found near this zip code.
+                                No bids found near this zip code. <button onClick={handleRefreshBids} disabled={bidRefreshStatus === 'refreshing'} style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', textDecoration: 'underline', fontSize: 14 }}>{bidRefreshStatus === 'refreshing' ? 'Refreshing...' : 'Refresh data from sources'}</button>
                             </div>
                         )}
                     </div>
