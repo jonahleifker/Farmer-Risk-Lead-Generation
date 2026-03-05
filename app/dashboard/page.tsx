@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import {
     FarmProfile, CostBreakdown, CommodityType, createDefaultProfile,
     calcBreakEvenPrice,
 } from '@/lib/calculations';
+import dynamic from 'next/dynamic';
+
+const CoopMap = dynamic(() => import('@/components/CoopMap'), { ssr: false });
 
 interface GrainBid {
     facility: string;
@@ -38,6 +41,8 @@ export default function FarmEconomicsPage() {
     const [isFetchingCoOps, setIsFetchingCoOps] = useState(false);
     const [zipInput, setZipInput] = useState('');
     const [bidRefreshStatus, setBidRefreshStatus] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle');
+    const [selectedFacility, setSelectedFacility] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'economics' | 'map'>('economics');
 
     // Load profile from API on mount
     useEffect(() => {
@@ -53,6 +58,8 @@ export default function FarmEconomicsPage() {
                         expectedYield: data.profile.expectedYield ?? 200,
                         costPerAcre: data.profile.costPerAcre ?? 0,
                         basisAssumption: data.profile.basisAssumption ?? -0.30,
+                        basisMode: data.profile.basisMode || 'manual',
+                        zipCode: data.profile.zipCode || '',
                         storageCost: data.profile.storageCost ?? 0,
                         desiredMargin: data.profile.desiredMargin ?? 0.50,
                         costBreakdown: data.profile.costBreakdown || {
@@ -269,268 +276,307 @@ export default function FarmEconomicsPage() {
                 </div>
             </div>
 
-            {/* Profile Settings */}
-            <div className="card">
-                <h3 className="card-title">Profile Settings</h3>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-                    <div style={{ flex: 1, minWidth: 140 }}>
-                        <label className="input-label">Commodity</label>
-                        <select className="input-field" value={profile.commodity}
-                            onChange={(e) => updateField({ commodity: e.target.value as CommodityType })}>
-                            <option value="corn">Corn</option>
-                            <option value="soybeans">Soybeans</option>
-                        </select>
-                    </div>
-                    <InputField label="Acres" value={profile.acres} prefix=""
-                        suffix="ac" onUpdate={(v) => updateField({ acres: v })} />
-                    <InputField label="Expected Yield" value={profile.expectedYield} prefix=""
-                        suffix="bu/ac" onUpdate={(v) => updateField({ expectedYield: v })} />
-                    <InputField label="Storage Cost" value={profile.storageCost} prefix="$"
-                        suffix="/bu" onUpdate={(v) => updateField({ storageCost: v })} />
-                    <InputField label="Desired Margin" value={profile.desiredMargin || 0} prefix="$"
-                        suffix="/bu" onUpdate={(v) => updateField({ desiredMargin: v })} />
-                </div>
+            {/* Tab Switcher */}
+            <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '1px solid var(--border)' }}>
+                {(['economics', 'map'] as const).map(tab => (
+                    <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        style={{
+                            padding: '10px 20px',
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: activeTab === tab ? '2px solid #22c55e' : '2px solid transparent',
+                            color: activeTab === tab ? 'var(--text-primary)' : 'var(--text-muted)',
+                            fontWeight: activeTab === tab ? 600 : 400,
+                            fontSize: 14,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                        }}
+                    >
+                        {tab === 'economics' ? '📊 Farm Economics' : '🗺️ Elevator Map'}
+                    </button>
+                ))}
             </div>
 
-            {/* Basis Configuration */}
-            <div className="card">
-                <h3 className="card-title">Basis Configuration</h3>
-
-                <div style={{ display: 'flex', gap: 16, marginBottom: 20 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                        <input type="radio" name="basisMode"
-                            checked={profile.basisMode === 'manual'}
-                            onChange={() => updateField({ basisMode: 'manual' })} />
-                        <span>Manual Entry</span>
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                        <input type="radio" name="basisMode"
-                            checked={profile.basisMode === 'auto'}
-                            onChange={() => updateField({ basisMode: 'auto' })} />
-                        <span>Lookup by Zip Code</span>
-                    </label>
+            {activeTab === 'map' ? (
+                <div className="card">
+                    <h3 className="card-title">Grain Elevator Coverage Map</h3>
+                    <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+                        All co-ops and elevators included in the basis lookup tool. Click a pin for details.
+                    </p>
+                    <CoopMap />
                 </div>
+            ) : (
+                <>
 
-                {profile.basisMode === 'manual' ? (
-                    <div style={{ maxWidth: 200 }}>
-                        <InputField label="Basis Assumption" value={profile.basisAssumption} prefix="$"
-                            suffix="/bu" onUpdate={(v) => updateField({ basisAssumption: v })} allowNegative />
-                    </div>
-                ) : (
-                    <div className="basis-lookup-container" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, maxWidth: 300 }}>
-                            <div style={{ flex: 1 }}>
-                                <label className="input-label">Zip Code</label>
-                                <input
-                                    className="input-field"
-                                    type="text"
-                                    value={zipInput}
-                                    placeholder="Enter Zip Code"
-                                    onChange={(e) => setZipInput(e.target.value)}
-                                    maxLength={5}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleZipLookup()}
-                                />
+                    {/* Profile Settings */}
+                    <div className="card">
+                        <h3 className="card-title">Profile Settings</h3>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                            <div style={{ flex: 1, minWidth: 140 }}>
+                                <label className="input-label">Commodity</label>
+                                <select className="input-field" value={profile.commodity}
+                                    onChange={(e) => updateField({ commodity: e.target.value as CommodityType })}>
+                                    <option value="corn">Corn</option>
+                                    <option value="soybeans">Soybeans</option>
+                                </select>
                             </div>
-                            <button
-                                className="btn btn-primary"
-                                onClick={handleZipLookup}
-                                disabled={isFetchingCoOps || zipInput.length < 5}
-                            >
-                                {isFetchingCoOps ? 'Searching...' : 'Search'}
-                            </button>
+                            <InputField label="Acres" value={profile.acres} prefix=""
+                                suffix="ac" onUpdate={(v) => updateField({ acres: v })} />
+                            <InputField label="Expected Yield" value={profile.expectedYield} prefix=""
+                                suffix="bu/ac" onUpdate={(v) => updateField({ expectedYield: v })} />
+                            <InputField label="Storage Cost" value={profile.storageCost} prefix="$"
+                                suffix="/bu" onUpdate={(v) => updateField({ storageCost: v })} />
+                            <InputField label="Desired Margin" value={profile.desiredMargin || 0} prefix="$"
+                                suffix="/bu" onUpdate={(v) => updateField({ desiredMargin: v })} />
+                        </div>
+                    </div>
+
+                    {/* Basis Configuration */}
+                    <div className="card">
+                        <h3 className="card-title">Basis Configuration</h3>
+
+                        <div style={{ display: 'flex', gap: 16, marginBottom: 20 }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                <input type="radio" name="basisMode"
+                                    checked={profile.basisMode === 'manual'}
+                                    onChange={() => updateField({ basisMode: 'manual' })} />
+                                <span>Manual Entry</span>
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                <input type="radio" name="basisMode"
+                                    checked={profile.basisMode === 'auto'}
+                                    onChange={() => updateField({ basisMode: 'auto' })} />
+                                <span>Lookup by Zip Code</span>
+                            </label>
                         </div>
 
-                        {profile.zipCode && coOps.length > 0 && (
-                            <div className="coop-list" style={{ marginTop: 8 }}>
-                                <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
-                                    Select a nearby elevator to use its current basis.
-                                </p>
-                                <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-                                    {coOps.map((bid, idx) => (
-                                        <div
-                                            key={`${bid.facility}-${bid.deliveryStart}-${idx}`}
-                                            onClick={() => updateField({ basisAssumption: bid.basis })}
-                                            style={{
-                                                border: `1px solid ${profile.basisAssumption === bid.basis ? 'var(--accent-blue)' : 'var(--border)'}`,
-                                                background: profile.basisAssumption === bid.basis ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-primary)',
-                                                borderRadius: 8, padding: 16, cursor: 'pointer',
-                                                transition: 'all 0.2s'
-                                            }}
-                                        >
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                                                <strong style={{ fontSize: 14 }}>{bid.facility}</strong>
-                                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{bid.distance} mi</span>
-                                            </div>
-                                            {bid.city && (
-                                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
-                                                    {bid.city}{bid.state ? `, ${bid.state}` : ''}
-                                                </div>
-                                            )}
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                                                <div>
-                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Basis</div>
-                                                    <div style={{ fontSize: 18, fontWeight: 700, color: bid.basis >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                                                        {bid.basis > 0 ? '+' : ''}{bid.basis.toFixed(2)}
-                                                    </div>
-                                                </div>
-                                                <div style={{ textAlign: 'right' }}>
-                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Delivery</div>
-                                                    <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                                                        {bid.futuresContract || 'N/A'}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            {profile.basisAssumption === bid.basis && (
-                                                <div style={{ marginTop: 12, fontSize: 12, color: 'var(--accent-blue)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                    <span>✓ Currently Selected</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        {profile.basisMode === 'manual' ? (
+                            <div style={{ maxWidth: 200 }}>
+                                <InputField label="Basis Assumption" value={profile.basisAssumption} prefix="$"
+                                    suffix="/bu" onUpdate={(v) => updateField({ basisAssumption: v })} allowNegative />
+                            </div>
+                        ) : (
+                            <div className="basis-lookup-container" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, maxWidth: 300 }}>
+                                    <div style={{ flex: 1 }}>
+                                        <label className="input-label">Zip Code</label>
+                                        <input
+                                            className="input-field"
+                                            type="text"
+                                            value={zipInput}
+                                            placeholder="Enter Zip Code"
+                                            onChange={(e) => setZipInput(e.target.value)}
+                                            maxLength={5}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleZipLookup()}
+                                        />
+                                    </div>
                                     <button
-                                        onClick={handleRefreshBids}
-                                        disabled={bidRefreshStatus === 'refreshing'}
-                                        style={{
-                                            background: 'none', border: '1px solid var(--border)',
-                                            borderRadius: 4, padding: '4px 10px', cursor: 'pointer',
-                                            fontSize: 11, color: 'var(--text-muted)',
-                                        }}
+                                        className="btn btn-primary"
+                                        onClick={handleZipLookup}
+                                        disabled={isFetchingCoOps || zipInput.length < 5}
                                     >
-                                        {bidRefreshStatus === 'refreshing' ? '↻ Refreshing...' : bidRefreshStatus === 'done' ? '✓ Updated' : '↻ Refresh Data'}
+                                        {isFetchingCoOps ? 'Searching...' : 'Search'}
                                     </button>
-                                    <span>Aggregated from Midwest grain elevators</span>
                                 </div>
+
+                                {profile.zipCode && coOps.length > 0 && (
+                                    <div className="coop-list" style={{ marginTop: 8 }}>
+                                        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                                            Select a nearby elevator to use its current basis.
+                                        </p>
+                                        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+                                            {coOps.map((bid, idx) => (
+                                                <div
+                                                    key={`${bid.facility}-${bid.deliveryStart}-${idx}`}
+                                                    onClick={() => {
+                                                        updateField({ basisAssumption: bid.basis });
+                                                        setSelectedFacility(bid.facility);
+                                                    }}
+                                                    style={{
+                                                        border: `1px solid ${selectedFacility === bid.facility || Math.abs(profile.basisAssumption - bid.basis) < 0.001 ? 'var(--accent-blue)' : 'var(--border)'}`,
+                                                        background: selectedFacility === bid.facility || Math.abs(profile.basisAssumption - bid.basis) < 0.001 ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-primary)',
+                                                        borderRadius: 8, padding: 16, cursor: 'pointer',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                                        <strong style={{ fontSize: 14 }}>{bid.facility}</strong>
+                                                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{bid.distance} mi</span>
+                                                    </div>
+                                                    {bid.city && (
+                                                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                                            {bid.city}{bid.state ? `, ${bid.state}` : ''}
+                                                        </div>
+                                                    )}
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                                                        <div>
+                                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Basis</div>
+                                                            <div style={{ fontSize: 18, fontWeight: 700, color: bid.basis >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                                                                {bid.basis > 0 ? '+' : ''}{bid.basis.toFixed(2)}
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ textAlign: 'right' }}>
+                                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Delivery</div>
+                                                            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                                                                {bid.futuresContract || 'N/A'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    {(selectedFacility === bid.facility || Math.abs(profile.basisAssumption - bid.basis) < 0.001) && (
+                                                        <div style={{ marginTop: 12, fontSize: 12, color: 'var(--accent-blue)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                            <span>✓ Selected — Basis Saved</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <button
+                                                onClick={handleRefreshBids}
+                                                disabled={bidRefreshStatus === 'refreshing'}
+                                                style={{
+                                                    background: 'none', border: '1px solid var(--border)',
+                                                    borderRadius: 4, padding: '4px 10px', cursor: 'pointer',
+                                                    fontSize: 11, color: 'var(--text-muted)',
+                                                }}
+                                            >
+                                                {bidRefreshStatus === 'refreshing' ? '↻ Refreshing...' : bidRefreshStatus === 'done' ? '✓ Updated' : '↻ Refresh Data'}
+                                            </button>
+                                            <span>Aggregated from Midwest grain elevators</span>
+                                        </div>
+                                    </div>
+                                )}
+                                {profile.zipCode && coOps.length === 0 && !isFetchingCoOps && (
+                                    <div style={{ padding: 16, background: 'rgba(239, 68, 68, 0.05)', color: '#ef4444', borderRadius: 8, fontSize: 14 }}>
+                                        No bids found near this zip code. <button onClick={handleRefreshBids} disabled={bidRefreshStatus === 'refreshing'} style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', textDecoration: 'underline', fontSize: 14 }}>{bidRefreshStatus === 'refreshing' ? 'Refreshing...' : 'Refresh data from sources'}</button>
+                                    </div>
+                                )}
                             </div>
                         )}
-                        {profile.zipCode && coOps.length === 0 && !isFetchingCoOps && (
-                            <div style={{ padding: 16, background: 'rgba(239, 68, 68, 0.05)', color: '#ef4444', borderRadius: 8, fontSize: 14 }}>
-                                No bids found near this zip code. <button onClick={handleRefreshBids} disabled={bidRefreshStatus === 'refreshing'} style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', textDecoration: 'underline', fontSize: 14 }}>{bidRefreshStatus === 'refreshing' ? 'Refreshing...' : 'Refresh data from sources'}</button>
-                            </div>
-                        )}
                     </div>
-                )}
-            </div>
 
-            {/* Cost Breakdown */}
-            <div className="card">
-                <h3 className="card-title">Cost Breakdown</h3>
-                <div className="cost-grid">
-                    {costCategories.map((cat) => (
-                        <div key={cat.key}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <label className="input-label" style={{ marginBottom: 0 }}>{cat.label}</label>
-                                <button onClick={() => openCalc(cat.key, cat.label)}
-                                    title="Per-acre calculator"
-                                    style={{
-                                        background: 'rgba(59, 130, 246, 0.08)', border: 'none',
-                                        borderRadius: 4, padding: '2px 6px', cursor: 'pointer',
-                                        fontSize: 14, lineHeight: 1,
-                                    }}>
-                                    🧮
-                                </button>
-                            </div>
-                            <CostInput
-                                value={profile.costBreakdown?.[cat.key] || 0}
-                                onChange={(v) => updateCost(cat.key, v)}
-                            />
+                    {/* Cost Breakdown */}
+                    <div className="card">
+                        <h3 className="card-title">Cost Breakdown</h3>
+                        <div className="cost-grid">
+                            {costCategories.map((cat) => (
+                                <div key={cat.key}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                        <label className="input-label" style={{ marginBottom: 0 }}>{cat.label}</label>
+                                        <button onClick={() => openCalc(cat.key, cat.label)}
+                                            title="Per-acre calculator"
+                                            style={{
+                                                background: 'rgba(59, 130, 246, 0.08)', border: 'none',
+                                                borderRadius: 4, padding: '2px 6px', cursor: 'pointer',
+                                                fontSize: 14, lineHeight: 1,
+                                            }}>
+                                            🧮
+                                        </button>
+                                    </div>
+                                    <CostInput
+                                        value={profile.costBreakdown?.[cat.key] || 0}
+                                        onChange={(v) => updateCost(cat.key, v)}
+                                    />
+                                </div>
+                            ))}
                         </div>
-                    ))}
-                </div>
-                <div style={{ marginTop: 16, padding: 16, background: 'var(--bg-primary)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                        <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Total Cost Per Acre</span>
-                        <span style={{ fontSize: 24, fontWeight: 700 }}>${profile.costPerAcre.toFixed(2)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Cost Per Bushel</span>
-                        <span style={{ fontWeight: 600, color: 'var(--accent-yellow)' }}>
-                            ${(profile.expectedYield > 0 ? profile.costPerAcre / profile.expectedYield : 0).toFixed(2)}/bu
-                        </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Comfort Price</span>
-                        <span style={{ fontWeight: 600, color: 'var(--accent-green)' }}>
-                            ${(profile.expectedYield > 0 ? (profile.costPerAcre / profile.expectedYield) + (profile.desiredMargin || 0.50) : 0).toFixed(2)}/bu
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Summary Cards */}
-            <div className="card">
-                <h3 className="card-title">Key Metrics</h3>
-                <div className="metrics-row">
-                    <div className="metric-item">
-                        <div className="metric-label">Break-Even Price</div>
-                        <div className="metric-value">${breakEven.toFixed(2)}</div>
-                    </div>
-                    <div className="metric-item">
-                        <div className="metric-label">Total Production</div>
-                        <div className="metric-value">{totalProd.toLocaleString()} bu</div>
-                    </div>
-                    <div className="metric-item">
-                        <div className="metric-label">Cost Per Acre</div>
-                        <div className="metric-value">${profile.costPerAcre.toFixed(2)}</div>
-                    </div>
-                    <div className="metric-item">
-                        <div className="metric-label">Comfort Price</div>
-                        <div className="metric-value" style={{ color: 'var(--accent-green)' }}>
-                            ${(breakEven + (profile.desiredMargin || 0.50)).toFixed(2)}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Per-Acre Calculator Modal */}
-            {
-                showCalc && (
-                    <div className="modal-overlay" onClick={() => setShowCalc(false)}>
-                        <div className="modal-content" onClick={e => e.stopPropagation()}>
-                            <div className="modal-header">
-                                <h3 className="modal-title">Calculate {calcField?.label}</h3>
-                                <button className="modal-close" onClick={() => setShowCalc(false)}>×</button>
+                        <div style={{ marginTop: 16, padding: 16, background: 'var(--bg-primary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Total Cost Per Acre</span>
+                                <span style={{ fontSize: 24, fontWeight: 700 }}>${profile.costPerAcre.toFixed(2)}</span>
                             </div>
-                            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
-                                Convert a bulk expense bill into a per-acre cost.
-                            </p>
-
-                            <div className="input-group">
-                                <label className="input-label">Total Expense Bill ($)</label>
-                                <input className="input-field" type="number" placeholder="e.g. 50000"
-                                    value={calcExpense} onChange={e => setCalcExpense(e.target.value)} autoFocus />
-                            </div>
-
-                            <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: 12, margin: '8px 0', letterSpacing: 1 }}>
-                                ÷ DIVIDED BY ÷
-                            </div>
-
-                            <div className="input-group">
-                                <label className="input-label">Total Farm Acres</label>
-                                <input className="input-field" type="number" placeholder="e.g. 1000"
-                                    value={calcAcres} onChange={e => setCalcAcres(e.target.value)} />
-                            </div>
-
-                            <div style={{
-                                background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.2)',
-                                borderRadius: 8, padding: 16, display: 'flex', justifyContent: 'space-between',
-                                alignItems: 'center', margin: '16px 0',
-                            }}>
-                                <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>Result:</span>
-                                <span style={{ color: 'var(--accent-blue)', fontSize: 22, fontWeight: 700 }}>
-                                    ${calcResult} / acre
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Cost Per Bushel</span>
+                                <span style={{ fontWeight: 600, color: 'var(--accent-yellow)' }}>
+                                    ${(profile.expectedYield > 0 ? profile.costPerAcre / profile.expectedYield : 0).toFixed(2)}/bu
                                 </span>
                             </div>
-
-                            <button className="btn btn-primary" style={{ width: '100%' }} onClick={applyCalc}>
-                                Apply to {calcField?.label}
-                            </button>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Comfort Price</span>
+                                <span style={{ fontWeight: 600, color: 'var(--accent-green)' }}>
+                                    ${(profile.expectedYield > 0 ? (profile.costPerAcre / profile.expectedYield) + (profile.desiredMargin || 0.50) : 0).toFixed(2)}/bu
+                                </span>
+                            </div>
                         </div>
                     </div>
-                )
-            }
-        </div >
+
+                    {/* Summary Cards */}
+                    <div className="card">
+                        <h3 className="card-title">Key Metrics</h3>
+                        <div className="metrics-row">
+                            <div className="metric-item">
+                                <div className="metric-label">Break-Even Price</div>
+                                <div className="metric-value">${breakEven.toFixed(2)}</div>
+                            </div>
+                            <div className="metric-item">
+                                <div className="metric-label">Total Production</div>
+                                <div className="metric-value">{totalProd.toLocaleString()} bu</div>
+                            </div>
+                            <div className="metric-item">
+                                <div className="metric-label">Cost Per Acre</div>
+                                <div className="metric-value">${profile.costPerAcre.toFixed(2)}</div>
+                            </div>
+                            <div className="metric-item">
+                                <div className="metric-label">Comfort Price</div>
+                                <div className="metric-value" style={{ color: 'var(--accent-green)' }}>
+                                    ${(breakEven + (profile.desiredMargin || 0.50)).toFixed(2)}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Per-Acre Calculator Modal */}
+                    {
+                        showCalc && (
+                            <div className="modal-overlay" onClick={() => setShowCalc(false)}>
+                                <div className="modal-content" onClick={e => e.stopPropagation()}>
+                                    <div className="modal-header">
+                                        <h3 className="modal-title">Calculate {calcField?.label}</h3>
+                                        <button className="modal-close" onClick={() => setShowCalc(false)}>×</button>
+                                    </div>
+                                    <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+                                        Convert a bulk expense bill into a per-acre cost.
+                                    </p>
+
+                                    <div className="input-group">
+                                        <label className="input-label">Total Expense Bill ($)</label>
+                                        <input className="input-field" type="number" placeholder="e.g. 50000"
+                                            value={calcExpense} onChange={e => setCalcExpense(e.target.value)} autoFocus />
+                                    </div>
+
+                                    <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: 12, margin: '8px 0', letterSpacing: 1 }}>
+                                        ÷ DIVIDED BY ÷
+                                    </div>
+
+                                    <div className="input-group">
+                                        <label className="input-label">Total Farm Acres</label>
+                                        <input className="input-field" type="number" placeholder="e.g. 1000"
+                                            value={calcAcres} onChange={e => setCalcAcres(e.target.value)} />
+                                    </div>
+
+                                    <div style={{
+                                        background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.2)',
+                                        borderRadius: 8, padding: 16, display: 'flex', justifyContent: 'space-between',
+                                        alignItems: 'center', margin: '16px 0',
+                                    }}>
+                                        <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>Result:</span>
+                                        <span style={{ color: 'var(--accent-blue)', fontSize: 22, fontWeight: 700 }}>
+                                            ${calcResult} / acre
+                                        </span>
+                                    </div>
+
+                                    <button className="btn btn-primary" style={{ width: '100%' }} onClick={applyCalc}>
+                                        Apply to {calcField?.label}
+                                    </button>
+                                </div>
+                            </div>
+                        )
+                    }
+                </>
+            )}
+        </div>
     );
 }
 

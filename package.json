@@ -10,12 +10,15 @@
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
     "@prisma/client": "^6.19.2",
+    "@types/leaflet": "^1.9.21",
     "bcryptjs": "^3.0.3",
+    "leaflet": "^1.9.4",
     "next": "16.1.6",
     "next-auth": "^5.0.0-beta.30",
     "prisma": "^6.19.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-leaflet": "^5.0.0",
     "us-zips": "^2022.9.1",
     "yahoo-finance2": "^3.13.1",
     "zipcodes": "^8.0.0"
