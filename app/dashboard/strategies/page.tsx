@@ -332,10 +332,10 @@ export default function StrategiesPage() {
                     <div className="cta-card">
                         <div className="cta-title">Ready to execute or need advice?</div>
                         <div className="cta-text" style={{ marginBottom: 16 }}>
-                            Take the next step with a StoneX professional to deploy these strategies.
+                            Take the next step with a professional advisor to deploy these strategies.
                         </div>
                         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                            <button className="btn btn-green">🎧 Speak With a StoneX Advisor</button>
+                            <button className="btn btn-green">🎧 Speak With an Advisor</button>
                             <button className="btn btn-outline">Open Hedge Account</button>
                         </div>
                     </div>
