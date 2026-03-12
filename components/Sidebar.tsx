@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Market Opportunity', icon: '📈', route: '/dashboard/market' },
   { label: 'Fundamentals', icon: '🌍', route: '/dashboard/fundamentals' },
   { label: 'Strategy Builder', icon: '💡', route: '/dashboard/strategies' },
+  { label: 'Trade Products', icon: '🏷️', route: '/dashboard/trade-products' },
   { label: 'History', icon: '📋', route: '/dashboard/history' },
   { label: 'Positions', icon: '🛡️', route: '/dashboard/positions' },
   { label: 'Executive Summary', icon: '📊', route: '/dashboard/reports' },
